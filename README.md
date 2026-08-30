@@ -39,10 +39,11 @@ so and stops rather than pretending.
 
 So run the book through OCR first, then open the result here. We recommend
 **[gImageReader](https://github.com/manisandro/gimagereader)**, a free front end to
-Tesseract that runs on Windows and Linux, reads PDFs directly, handles Croatian and the
-other Central European languages properly, and writes a searchable PDF back out with
-the pictures untouched and the recognised text laid invisibly behind them. That is
-exactly the kind of file this app wants.
+Tesseract that runs on Windows and Linux, reads PDFs directly, and writes a searchable
+PDF back out with the pictures untouched and the recognised text laid invisibly behind
+them. That is exactly the kind of file this app wants. It reads well beyond English
+too: over a hundred languages, smaller ones such as Croatian and Slovenian among
+them, and long dead ones such as Latin.
 
 If your scan is grey, shadowed along the gutter and speckled, clean it before OCR
 rather than after, because OCR reads a clean page far better than a dirty one. Two
