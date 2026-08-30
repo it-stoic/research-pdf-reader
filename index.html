@@ -25,8 +25,28 @@
   </section>
 
   <section id="noText" class="warn" hidden>
-    <h2>This PDF carries no text</h2>
-    <p class="muted">The pages are pictures, so there is nothing to search. Run the book through OCR first and open the result here.</p>
+    <h2>This PDF has no text in it</h2>
+    <p>The pages are pictures of words rather than words. Nothing can search a
+    picture, so there is nothing here for your terms to be found in.</p>
+    <p>This reader works only on books that carry a <strong>text layer</strong>: the
+    recognised words, kept invisibly behind the scanned page. The book still looks
+    exactly like the scan, but the words in it can be searched, selected and copied.
+    Putting that layer there is the job of OCR software, and it has to be done only
+    once per book.</p>
+    <p>For that we recommend
+    <a href="https://github.com/manisandro/gimagereader" target="_blank" rel="noopener">gImageReader</a>,
+    a friendly front end to the Tesseract engine. <strong>It is free, open source,
+    and does the whole job on your own computer</strong>, so your book is never
+    uploaded anywhere, exactly as here. It opens PDFs directly, reads Croatian and
+    the other Central European languages, and saves a searchable PDF with the scan
+    itself untouched.</p>
+    <p class="get"><a href="https://github.com/manisandro/gimagereader" target="_blank" rel="noopener">Download gImageReader from GitHub</a>
+    &rarr; run your book through it, then open the result here.</p>
+  </section>
+
+  <section id="fileError" class="warn" hidden>
+    <h2></h2>
+    <p class="muted"></p>
   </section>
 
   <footer>

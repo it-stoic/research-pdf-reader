@@ -76,6 +76,7 @@
   function open(file) {
     reset();
     el('noText').hidden = true;
+    el('fileError').hidden = true;
     el('fileName').textContent = file.name;
 
     el('landing').hidden = true;
@@ -118,7 +119,7 @@
   }
 
   function fail(what, why) {
-    var warn = el('noText');
+    var warn = el('fileError');
     warn.querySelector('h2').textContent = what;
     warn.querySelector('p').textContent = why;
     el('app').hidden = true;

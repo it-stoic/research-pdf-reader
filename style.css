@@ -123,6 +123,8 @@ select:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px va
 }
 .warn h2 { margin: 0 0 6px; font-size: 15px; }
 .warn p { margin: 0; }
+.warn p + p { margin-top: 9px; }
+.warn .get { margin-top: 12px; font-weight: 600; }
 
 #landing footer {
   margin-top: 30px;
