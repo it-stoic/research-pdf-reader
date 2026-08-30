@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research PDF Reader</title>
+<link rel="stylesheet" href="style.css">
+<meta name="theme-color" content="#6b46c1">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+
+<div id="landing">
+  <header>
+    <h1>Research PDF Reader</h1>
+    <p>Search a PDF for as many terms as you like at once, each in its own colour, and every spelling of each. Everything happens on this computer: nothing is uploaded, and nothing is kept when you close the tab.</p>
+    <p class="cross">A scan with no text in it? <a href="https://it-stoic.github.io/book-scan-cleaner/">Book Scan Cleaner</a> tidies the page, but the words still have to be recognised elsewhere first.</p>
+  </header>
+
+  <section id="drop" class="drop">
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+    <p><strong>Drop a PDF here</strong></p>
+    <p class="muted">or <button type="button" id="pick" class="link">choose a file</button></p>
+  </section>
+
+  <section id="noText" class="warn" hidden>
+    <h2>This PDF carries no text</h2>
+    <p class="muted">The pages are pictures, so there is nothing to search. Run the book through OCR first and open the result here.</p>
+  </section>
+
+  <footer>
+    Free software under the <a href="https://github.com/it-stoic/research-pdf-reader/blob/main/LICENSE">GNU AGPL v3</a>.
+    <a href="https://github.com/it-stoic/research-pdf-reader">Source code</a>.
+    <br>&copy; 2026 <a href="https://antiquanova.hr/en/" target="_blank" rel="noopener">Antiqua Nova</a>.
+  </footer>
+</div>
+
+<div id="app" hidden>
+  <div class="bar">
+    <button type="button" id="toggleSide" class="icon" title="Hide the terms">&#9776;</button>
+    <span id="fileName" class="name"></span>
+    <div class="progress" id="progress" hidden><span id="progressBar"></span></div>
+
+    <div class="group">
+      <button type="button" id="prev" title="Previous page">&lsaquo;</button>
+      <input type="number" id="pageNum" min="1" value="1" aria-label="Page">
+      <span class="muted" id="pageTotal"></span>
+      <button type="button" id="next" title="Next page">&rsaquo;</button>
+    </div>
+
+    <div class="group">
+      <button type="button" id="zoomOut" title="Zoom out (Ctrl and the wheel)">&minus;</button>
+      <button type="button" id="zoomLabel" title="Back to the width of the page">Fit</button>
+      <button type="button" id="zoomIn" title="Zoom in (Ctrl and the wheel)">+</button>
+      <button type="button" id="spread" title="Two pages side by side">Two page view</button>
+    </div>
+
+    <div class="group">
+      <button type="button" id="prevHit" title="Previous hit (Ctrl+Shift+Left)" disabled>&lsaquo;</button>
+      <span class="muted" id="hitInfo">no hits</span>
+      <button type="button" id="nextHit" title="Next hit (Ctrl+Shift+Right)" disabled>&rsaquo;</button>
+    </div>
+
+    <button type="button" id="listAll" class="right" title="Every mention in one list">All mentions</button>
+    <button type="button" id="change">Change file</button>
+  </div>
+
+  <div class="body">
+    <aside id="side">
+      <div class="scroll">
+        <div id="rows"></div>
+        <button type="button" id="addRow" class="wide">Add a term</button>
+      </div>
+      <div class="foot">
+        <div class="pair">
+          <button type="button" id="saveProfile" class="soft">Save set</button>
+          <button type="button" id="loadProfile" class="soft">Load set</button>
+          <input type="file" id="profileFile" accept="application/json,.json" hidden>
+        </div>
+        <button type="button" id="help" class="quiet wide">How it works</button>
+      </div>
+    </aside>
+
+    <main class="reader">
+      <div class="pages" id="pages"></div>
+
+      <aside id="found" hidden>
+        <div class="top">
+          <strong id="foundCount"></strong>
+          <button type="button" id="foundAll" class="quiet" hidden>All terms</button>
+          <button type="button" id="foundClose" class="quiet">Close</button>
+        </div>
+        <div class="list" id="foundList"></div>
+      </aside>
+      <div class="density" id="density" title="Where the terms sit in the book"></div>
+    </main>
+  </div>
+</div>
+
+
+<dialog id="helpBox">
+  <article>
+    <h2>How this works</h2>
+
+    <p>Drop in a PDF that already carries a text layer. It is read once, on this
+    computer, and nothing is uploaded or kept: close the tab and it is gone.</p>
+
+    <h3>Terms</h3>
+    <p>Each row is one term with its own colour, and there can be as many rows as
+    you like. They need not be related to each other: a family name in yellow
+    beside a people or a place in red is a normal way to work. The number beside
+    a row is how often it occurs in the whole book. Untick <em>show</em> to put a
+    row aside without losing it.</p>
+
+    <h3>How a term is matched</h3>
+    <p>Case and diacritics never count: <code>Modić</code>, <code>modic</code>
+    and <code>MODIĆ</code> are one and the same. What you choose per row is how
+    much of a word has to match.</p>
+    <dl>
+      <dt>starts with</dt>
+      <dd>The default, and the one that handles Latin declension. <code>Modich</code>
+      also finds <em>Modicha</em> and <em>Modichem</em>, but not <em>quo modi</em>.</dd>
+      <dt>whole word</dt>
+      <dd>Only the word itself, nothing grown onto it.</dd>
+      <dt>anywhere</dt>
+      <dd>Also inside another word, so <code>Modich</code> finds <em>deModich</em>.
+      This is the one that drags in noise.</dd>
+    </dl>
+    <p>The choice matters more than it looks. <em>modi</em> is the genitive of
+    <em>modus</em> and stands on nearly every page of a charter collection, so
+    searching for it anywhere returns hundreds of hits of which a handful are the
+    family.</p>
+
+    <h3>Spellings</h3>
+    <p>Under a row are variants the book itself contains, with their counts. They
+    are found by the orthography of Latin charters — w, u and v as one letter, y
+    for i, ch, cz, cs and ty for c, th for t, a doubled consonant for a single
+    one — and beyond that only a letter that stands for another may differ:
+    a vowel for a vowel, which is the scribe, or a pair a reading engine mixes
+    up, which is the OCR. A difference at the very first letter is real but
+    rarer, so it is offered last. An ending never counts, because that is what
+    <em>starts with</em> is already for. So <em>Mudich</em> and <em>Nodich</em>
+    are offered for <em>Modich</em>, and <em>woman</em> is not offered for
+    <em>Roman</em>. Nothing is invented either: a form no page
+    carries is never offered. Tick the
+    ones that belong to your term and they are counted together, under one
+    colour. What the list does not offer you can type yourself with
+    <em>+ spelling</em>: <code>Roma</code> and <code>Rome</code> under the same
+    colour is a normal way to work. Click a spelling to drop it again.</p>
+
+    <h3>Reading</h3>
+    <p>Every occurrence is highlighted at once, and a name broken across a line
+    is highlighted whole, on both lines. <em>‹ ›</em> beside the count walks
+    through the hits in reading order; Ctrl+Shift+Left and Ctrl+Shift+Right do
+    the same from the keyboard. The strip down the right edge is the whole book
+    at a glance, one tick per hit in its row's colour. Where two colours sit at
+    the same height, both terms are on that page: click the strip to go there.</p>
+
+    <h3>Every mention in one list</h3>
+    <p><em>All mentions</em> opens a panel down the right side holding every hit
+    of every showing term, in reading order, each with its page number and half
+    a line either side. The <em>&#8801;</em> beside a term narrows the same panel
+    to that one term, its added spellings included; <em>All terms</em> in the
+    panel widens it again. Click a line and the page opens at it. It is the way to
+    read what a name is doing across a book without scrolling for it.</p>
+
+    <h3>Sets</h3>
+    <p><em>save this set</em> writes the rows to a small .json file — terms,
+    colours, match modes. Load it on the next book, or send it to a colleague.</p>
+
+    <h3>What it will not do</h3>
+    <p>It does not recognise text. If the pages are pictures with no text layer,
+    it says so and stops; run the book through OCR first. It never writes to your
+    PDF: the highlighting is only on screen.</p>
+  </article>
+  <div class="close"><button type="button" id="helpClose">Close</button></div>
+</dialog>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="index-core.js"></script>
+<script src="match-core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

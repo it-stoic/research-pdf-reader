@@ -1,0 +1,24 @@
+{
+  "name": "research-pdf-reader",
+  "version": "0.1.0",
+  "description": "Search many terms at once in a PDF, every spelling of each, locally in the browser",
+  "main": "index-core.js",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node test/index-core.test.js && node test/match-core.test.js",
+    "vendor": "node scripts/vendor.js"
+  },
+  "keywords": [],
+  "author": "Filip Šimunjak",
+  "license": "AGPL-3.0-or-later",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.9.0",
+      "onFail": "download"
+    }
+  },
+  "dependencies": {
+    "pdfjs-dist": "3.11.174"
+  }
+}
