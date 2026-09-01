@@ -132,6 +132,22 @@ select:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px va
   font-size: 13px;
   color: var(--muted);
 }
+#landing footer p { margin: 0; }
+#landing footer .also {
+  max-width: 700px;
+  margin: 0 auto 14px;
+  font-size: 14px;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+@media (max-width: 700px) {
+  #landing { padding: 0 10px 30px; }
+  #landing header { padding: 30px 0 16px; }
+  #landing h1 { font-size: 24px; }
+  #landing header p { font-size: 14px; }
+  .drop { padding: 40px 16px; }
+}
 
 /* --- the reader, which is the whole window ------------------------------- */
 
