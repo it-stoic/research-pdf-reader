@@ -155,6 +155,20 @@
   }
 
   /*
+   * spans() the other way round: a point inside one fragment, where a selection
+   * starts or stops, back to a place in the string. It is the first character
+   * drawn at or after the point, so the end of a selection comes out as the
+   * character after it, which is what a slice wants.
+   */
+  function locate(page, item, offset) {
+    for (var i = 0; i < page.src.length; i++) {
+      var at = page.src[i];
+      if (at && (at.item > item || (at.item === item && at.offset >= offset))) return i;
+    }
+    return page.text.length;
+  }
+
+  /*
    * The stretch as it was actually printed, capitals, diacritics and all. The
    * index is folded, so it can be searched but not quoted; this is what a
    * quotation and a line of context are made of. One glyph can stand behind
@@ -176,6 +190,7 @@
   return {
     buildPage: buildPage,
     spans: spans,
+    locate: locate,
     original: original,
     fold: fold,
     foldText: foldText,

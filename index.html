@@ -14,7 +14,7 @@
 <div id="landing">
   <header>
     <h1>Research PDF Reader</h1>
-    <p>Search a PDF for as many terms as you like at once, each in its own colour, and every spelling of each. Everything happens on this computer: nothing is uploaded, and nothing is kept when you close the tab.</p>
+    <p>Search a PDF for as many terms as you like at once, each in its own colour, and every spelling of each. Highlight and comment as you read. Everything happens on this computer: nothing is uploaded, and your notes stay in this browser.</p>
     <p class="cross">Your book needs a text layer. If it has none, run it through
     <a href="https://github.com/manisandro/gimagereader" target="_blank" rel="noopener">gImageReader</a>
     first, which is free, open source and entirely local;
@@ -86,6 +86,7 @@
     </div>
 
     <button type="button" id="listAll" class="right" title="Every mention in one list">All mentions</button>
+    <button type="button" id="notesOpen" title="Your highlights and comments">Notes</button>
     <button type="button" id="change">Change file</button>
   </div>
 
@@ -108,7 +109,7 @@
     <main class="reader">
       <div class="pages" id="pages"></div>
 
-      <aside id="found" hidden>
+      <aside id="found" class="drawer" hidden>
         <div class="top">
           <strong id="foundCount"></strong>
           <button type="button" id="foundAll" class="quiet" hidden>All terms</button>
@@ -116,9 +117,50 @@
         </div>
         <div class="list" id="foundList"></div>
       </aside>
+
+      <aside id="notes" class="drawer" hidden>
+        <div class="top">
+          <strong id="notesCount"></strong>
+          <button type="button" id="notesClose" class="quiet">Close</button>
+        </div>
+        <div class="filter">
+          <span class="inks" id="notesInks"></span>
+          <select id="notesLabel" aria-label="Show only one label"></select>
+        </div>
+        <div class="list" id="notesList"></div>
+        <div class="foot">
+          <div class="pair">
+            <button type="button" id="exportNotes" class="soft" title="Every note as a quotation with its page and your comment">Export as Markdown</button>
+          </div>
+          <div class="pair">
+            <button type="button" id="saveNotes" class="soft" title="Write the notes to a file, to keep or to send">Save notes</button>
+            <button type="button" id="loadNotes" class="soft" title="Add the notes from a file to these">Load notes</button>
+            <input type="file" id="notesFile" accept="application/json,.json" hidden>
+          </div>
+        </div>
+      </aside>
       <div class="density" id="density" title="Where the terms sit in the book"></div>
+
+      <div id="selBar" class="float selbar" hidden>
+        <span class="inks" id="selInks"></span>
+        <button type="button" id="selComment">Comment</button>
+      </div>
+
+      <div id="noteBox" class="float notebox" hidden>
+        <div class="line">
+          <span class="inks" id="noteInks"></span>
+          <select id="noteLabel" aria-label="Label"></select>
+        </div>
+        <textarea id="noteText" rows="3" placeholder="Write a comment"></textarea>
+        <div class="line">
+          <button type="button" id="noteDelete" class="quiet danger">Delete</button>
+          <button type="button" id="noteDone" class="soft">Done</button>
+        </div>
+      </div>
     </main>
   </div>
+
+  <div id="toast" class="toast" hidden><span></span><button type="button" class="link">Undo</button></div>
 </div>
 
 
@@ -127,7 +169,8 @@
     <h2>How this works</h2>
 
     <p>Drop in a PDF that already carries a text layer. It is read once, on this
-    computer, and nothing is uploaded or kept: close the tab and it is gone.</p>
+    computer, and nothing is uploaded. Close the tab and the book is gone; only
+    your own highlights and comments are kept, in this browser.</p>
 
     <h3>Terms</h3>
     <p>Each row is one term with its own colour, and there can be as many rows as
@@ -188,6 +231,25 @@
     panel widens it again. Click a line and the page opens at it. It is the way to
     read what a name is doing across a book without scrolling for it.</p>
 
+    <h3>Highlights and comments</h3>
+    <p>Select any words on a page, from one word to a whole paragraph, even one
+    that runs onto the next page. A small bar appears beside them: pick a colour
+    to highlight them, or <em>Comment</em> to write a note on them. Click a
+    highlight to change its colour, give it a label such as <em>Important</em> or
+    <em>To verify</em>, write its comment, or delete it. A label stays with its
+    colour in this book: give one orange highlight <em>Important</em> and every
+    orange highlight after it is <em>Important</em> too, until you choose another.
+    A highlight that carries a comment has a small dot at its end.</p>
+    <p><em>Notes</em> in the top bar lists every highlight and comment in reading
+    order. Show only one colour or one label; click a note and the page opens at
+    it. <em>Export as Markdown</em> writes them out as quotations with their pages
+    and your comments, ready to go into a paper or a notebook.</p>
+    <p>Notes are kept in this browser, filed under the PDF's own fingerprint, so
+    the same file opened again brings them back. They are never written into the
+    PDF, and clearing the browser's data clears them too. <em>Save notes</em>
+    writes them to a small file to keep, to take to another computer or to send
+    to a colleague; <em>Load notes</em> adds such a file to what is already here.</p>
+
     <h3>Sets</h3>
     <p><em>save this set</em> writes the rows to a small .json file — terms,
     colours, match modes. Load it on the next book, or send it to a colleague.</p>
@@ -195,7 +257,7 @@
     <h3>What it will not do</h3>
     <p>It does not recognise text. If the pages are pictures with no text layer,
     it says so and stops; run the book through OCR first. It never writes to your
-    PDF: the highlighting is only on screen.</p>
+    PDF: your highlights and comments are kept beside the file, never in it.</p>
   </article>
   <div class="close"><button type="button" id="helpClose">Close</button></div>
 </dialog>
@@ -203,6 +265,7 @@
 <script src="vendor/pdf.min.js"></script>
 <script src="index-core.js"></script>
 <script src="match-core.js"></script>
+<script src="notes-core.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

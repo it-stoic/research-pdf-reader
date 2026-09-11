@@ -1,11 +1,11 @@
 {
   "name": "research-pdf-reader",
   "version": "0.1.0",
-  "description": "Search many terms at once in a PDF, every spelling of each, locally in the browser",
+  "description": "Search many terms at once in a PDF, every spelling of each, and highlight and comment on it, locally in the browser",
   "main": "index-core.js",
   "scripts": {
     "start": "node scripts/serve.js",
-    "test": "node test/index-core.test.js && node test/match-core.test.js",
+    "test": "node test/index-core.test.js && node test/match-core.test.js && node test/notes-core.test.js",
     "vendor": "node scripts/vendor.js"
   },
   "keywords": [],

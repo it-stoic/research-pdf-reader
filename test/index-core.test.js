@@ -1,19 +1,6 @@
 const assert = require('assert');
-const { buildPage, spans, original, fold, foldText, isWordChar } = require('../index-core');
-
-const H = 12;
-
-// a fragment the way pdf.js hands it over, placed at a baseline
-function frag(str, x, y, opts) {
-  const o = opts || {};
-  return {
-    str,
-    width: o.width === undefined ? str.length * 6 : o.width,
-    height: o.height === undefined ? H : o.height,
-    transform: [1, 0, 0, H, x, y],
-    hasEOL: !!o.hasEOL,
-  };
-}
+const { buildPage, spans, locate, original, fold, foldText, isWordChar } = require('../index-core');
+const frag = require('./frag');
 
 function run() {
   /* --- folding ----------------------------------------------------------- */
@@ -108,6 +95,18 @@ function run() {
   assert.strictEqual(original(printed, 0, 5), 'Modić', 'and so does a stretch of one word');
   assert.strictEqual(original(broken, 0, 6), 'Modich', 'a stitched word reads as one');
   assert.strictEqual(original(grown, 0, 2), 'Æ', 'one glyph behind two letters is written once');
+
+  /* --- a point in a fragment, back to the string, for a selection -------- */
+
+  assert.strictEqual(locate(spaced, 0, 0), 0, 'the start of quo');
+  assert.strictEqual(locate(spaced, 1, 0), 4, 'the start of modi, past the inserted space');
+  assert.strictEqual(locate(spaced, 0, 3), 4, 'the end of quo is the character after it');
+  assert.strictEqual(locate(spaced, 1, 4), spaced.text.length, 'past the last glyph is the end of the page');
+  assert.strictEqual(spaced.text.slice(locate(spaced, 1, 1), locate(spaced, 1, 3)), 'od');
+  assert.strictEqual(broken.text.slice(locate(broken, 0, 0), locate(broken, 0, 3)), 'mo',
+    'a selection of Mo- ends before dich, with the hyphen already gone');
+  assert.strictEqual(locate(grown, 0, 0), 0, 'a glyph behind two letters starts at the first');
+  assert.strictEqual(locate(grown, 0, 1), 2);
 
   /* --- a page with nothing on it must not crash -------------------------- */
 

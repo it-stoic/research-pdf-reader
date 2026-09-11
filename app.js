@@ -19,6 +19,7 @@
   var LADDER = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3];
   var CONTEXT = 40;         // characters of the line kept either side of a mention
   var SPREAD_GAP = 2;       // the pixels between two pages lying side by side
+  var ASCENT = 0.8;         // the share of a letter's size above the baseline, so a mark covers descenders too
   var PALETTE = [
     '#ffe14d', '#ffab6b', '#ff9aa8', '#e3a9f0', '#8fb4ff',
     '#7fd6f5', '#7ae0c3', '#a6e77f', '#d5db5c', '#c0b6a8',
@@ -44,6 +45,26 @@
   var shown = [];           // what the list is holding, all of them or one term
   var scope = null;         // the row the list is narrowed to, or null for all
   var at = -1;
+  var baselines = new Map(); // font family -> its baseline, as a share of a one-line box
+
+  var notes = [];           // the reader's own highlights and comments on this book
+  var stray = [];           // kept notes whose words this copy of the file no longer has
+  var shelf = null;         // the key this book's notes are kept under in the browser
+  var labels = {};          // colour -> the label it carries in this book, set by the last note given one
+  var warned = false;
+  var ink = NotesCore.INKS[0].key;  // the colour the last highlight was made in
+  var pending = null;       // the stretch the selection bar is offering to mark
+  var pressed = false;      // a press began on the pages, so its release may be a selection
+  var opened = null;        // the note the note box is editing
+  var lit = null;           // the note last jumped to
+  var notesInk = null;
+  var notesLabel = '';
+  var toastTimer = null;
+  var selBar = el('selBar');
+  var noteBox = el('noteBox');
+  var noteInks = el('noteInks');
+  var noteLabel = el('noteLabel');
+  var noteText = el('noteText');
 
   /* --- opening a file ----------------------------------------------------- */
 
@@ -94,6 +115,7 @@
       el('progress').hidden = true;
       var written = book.reduce(function (n, page) { return n + page.text.length; }, 0);
       if (written < MIN_TEXT) { noTextLayer(); return; }
+      shelve();
       layout();
       if (!rows.length) addRow();
       drawRows();
@@ -114,6 +136,13 @@
     shells = [];
     scales = [];
     vocab = new Map();
+    notes = [];
+    stray = [];
+    shelf = null;
+    labels = {};
+    lit = null;
+    closeNote();
+    selBar.hidden = true;
     el('pages').textContent = '';
     el('density').textContent = '';
   }
@@ -145,7 +174,7 @@
       return doc.getPage(n).then(function (page) {
         var view = page.getViewport({ scale: 1 });
         return page.getTextContent().then(function (content) {
-          var built = IndexCore.buildPage(content.items);
+          var built = IndexCore.buildPage(fromCorner(content.items, page));
           book.push({ text: built.text, src: built.src, width: view.width, height: view.height });
           MatchCore.addWords(built.text, vocab);
           page.cleanup();
@@ -155,6 +184,31 @@
       });
     };
     return step(1);
+  }
+
+  // a cropped page's box need not start at the origin, and everything drawn is measured from its corner
+  function fromCorner(items, page) {
+    var x0 = page.view[0];
+    var y0 = page.view[1];
+    if (!x0 && !y0) return items;
+    return items.map(function (item) {
+      if (!item.transform) return item;
+      var t = item.transform;
+      return Object.assign({}, item, { transform: [t[0], t[1], t[2], t[3], t[4] - x0, t[5] - y0] });
+    });
+  }
+
+  // where a browser font puts its baseline in a box one line high, so the invisible text sits on the printed text
+  function baseline(family) {
+    if (!baselines.has(family)) {
+      var pen = document.createElement('canvas').getContext('2d');
+      pen.font = '100px ' + family;
+      var metrics = pen.measureText('');
+      var up = metrics.fontBoundingBoxAscent / 100;
+      var down = metrics.fontBoundingBoxDescent / 100;
+      baselines.set(family, up ? (1 + up - down) / 2 : ASCENT);
+    }
+    return baselines.get(family);
   }
 
   /* --- the pages ---------------------------------------------------------- */
@@ -178,7 +232,12 @@
 
   function layout() {
     var host = el('pages');
+    closeNote();
+    selBar.hidden = true;
     host.textContent = '';
+    // back in at once, and first, so a lookup by id still finds them and .page:last-child stays the last page
+    host.appendChild(selBar);
+    host.appendChild(noteBox);
     shells = [];
     host.classList.toggle('two', spread);
     var room = host.clientWidth - 36;
@@ -276,16 +335,18 @@
 
       var here = scales[i];
       var before = null;
-      content.items.forEach(function (item, n) {
+      var items = fromCorner(content.items, page);
+      items.forEach(function (item, n) {
         if (!item.str) { entry.glyphs.push(null); return; }
         var size = (item.height || 10) * here;
         var span = document.createElement('span');
         var style = content.styles[item.fontName];
+        var family = (style && style.fontFamily) || 'serif';
         span.textContent = item.str;
-        span.style.fontFamily = (style && style.fontFamily) || 'serif';
+        span.style.fontFamily = family;
         span.style.fontSize = size + 'px';
         span.style.left = (item.transform[4] * here) + 'px';
-        span.style.top = ((book[i].height - item.transform[5]) * here - size) + 'px';
+        span.style.top = ((book[i].height - item.transform[5]) * here - size * baseline(family)) + 'px';
 
         /*
          * What a copy needs and the boxes do not: where the lines and words
@@ -322,7 +383,7 @@
 
       shells[i].appendChild(layer);
       entry.layer = layer;
-      content.items.forEach(function (item, n) {
+      items.forEach(function (item, n) {
         var span = entry.glyphs[n];
         if (!span || !item.width) return;
         var drawn = span.offsetWidth;
@@ -737,20 +798,41 @@
     var glyphs = live.has(i) ? live.get(i).glyphs : null;
     var origin = glyphs ? shells[i].getBoundingClientRect() : null;
 
+    function draw(start, end, color) {
+      return IndexCore.spans(page, start, end).map(function (part) {
+        var real = origin ? measure(glyphs[part.item], part, origin) : null;
+        var mark = document.createElement('i');
+        mark.style.background = color;
+        mark.style.left = (real ? real.left : part.x * here) + 'px';
+        mark.style.width = (real ? real.width : part.w * here) + 'px';
+        mark.style.top = ((page.height - part.y - part.h * ASCENT) * here) + 'px';
+        mark.style.height = (part.h * here) + 'px';
+        marks.appendChild(mark);
+        return mark;
+      });
+    }
+
+    notes.forEach(function (note) {
+      var part = NotesCore.onPage(note, i, page.text.length);
+      if (!part) return;
+      var drawn = draw(part.start, part.end, NotesCore.ink(note.ink).color);
+      drawn.forEach(function (mark) {
+        mark.className = note.id === lit ? 'note now' : 'note';
+        mark.dataset.note = note.id;
+      });
+      var last = drawn[drawn.length - 1];
+      if (!last || i !== note.endPage || !note.comment.trim()) return;
+      var pin = document.createElement('b');
+      pin.className = 'pin';
+      pin.style.left = (parseFloat(last.style.left) + parseFloat(last.style.width)) + 'px';
+      pin.style.top = last.style.top;
+      marks.appendChild(pin);
+    });
+
     rows.forEach(function (row) {
       if (!row.on || !row.hits[i]) return;
       row.hits[i].forEach(function (hit) {
-        IndexCore.spans(page, hit.start, hit.end).forEach(function (part) {
-          var real = origin ? measure(glyphs[part.item], part, origin) : null;
-          var mark = document.createElement('i');
-          mark.dataset.start = hit.start;
-          mark.style.background = row.color;
-          mark.style.left = (real ? real.left : part.x * here) + 'px';
-          mark.style.width = (real ? real.width : part.w * here) + 'px';
-          mark.style.top = ((page.height - part.y - part.h) * here) + 'px';
-          mark.style.height = (part.h * here) + 'px';
-          marks.appendChild(mark);
-        });
+        draw(hit.start, hit.end, row.color).forEach(function (mark) { mark.dataset.start = hit.start; });
       });
     });
   }
@@ -803,16 +885,23 @@
     return mine;
   }
 
-  function goToHit(hit) {
-    var page = book[hit.page];
+  function reveal(n, start) {
+    var page = book[n];
     var high = 0;
-    for (var i = hit.start; i < page.src.length; i++) {
-      if (page.src[i]) { high = (page.height - page.src[i].y - page.src[i].h) * scales[hit.page]; break; }
+    for (var i = start; i < page.src.length; i++) {
+      if (page.src[i]) { high = (page.height - page.src[i].y - page.src[i].h) * scales[n]; break; }
     }
-    el('pages').scrollTop = shells[hit.page].offsetTop + high - el('pages').clientHeight / 3;
+    el('pages').scrollTop = shells[n].offsetTop + high - el('pages').clientHeight / 3;
+  }
 
-    var was = document.querySelector('.marks i.now');
-    if (was) was.classList.remove('now');
+  function unlight() {
+    lit = null;
+    document.querySelectorAll('.marks i.now').forEach(function (mark) { mark.classList.remove('now'); });
+  }
+
+  function goToHit(hit) {
+    reveal(hit.page, hit.start);
+    unlight();
     shells[hit.page].querySelectorAll('.marks i').forEach(function (mark) {
       if (Number(mark.dataset.start) === hit.start) mark.classList.add('now');
     });
@@ -837,6 +926,7 @@
     var same = panel.hidden ? false : scope === (row || null);
     scope = row || null;
     panel.hidden = same;
+    if (!panel.hidden) showNotes(false);
     el('listAll').classList.toggle('on', !panel.hidden && !scope);
     refit();
   }
@@ -871,33 +961,31 @@
 
     shown.forEach(function (hit, n) {
       var page = book[hit.page];
-      var line = document.createElement('button');
-      line.type = 'button';
-      line.className = 'find';
-
-      var dot = document.createElement('span');
-      dot.className = 'dot';
-      dot.style.background = hit.color;
-
-      var where = document.createElement('span');
-      where.className = 'where';
-      where.textContent = 'p. ' + (hit.page + 1);
-
-      var said = document.createElement('span');
-      said.className = 'said';
+      var line = listLine(hit.color, 'p. ' + (hit.page + 1), function () { goToHit(hit); });
+      var said = line.querySelector('.said');
       said.appendChild(document.createTextNode(lead(page, hit)));
       var word = document.createElement('mark');
       word.textContent = IndexCore.original(page, hit.start, hit.end);
       said.appendChild(word);
       said.appendChild(document.createTextNode(trail(page, hit)));
-
-      line.appendChild(dot);
-      line.appendChild(where);
-      line.appendChild(said);
-      line.addEventListener('click', function () { goToHit(hit); });
       host.appendChild(line);
     });
     markFound();
+  }
+
+  function listLine(color, where, go) {
+    var line = document.createElement('button');
+    line.type = 'button';
+    line.className = 'find';
+    [['dot', ''], ['where', where], ['said', '']].forEach(function (part) {
+      var span = document.createElement('span');
+      span.className = part[0];
+      span.textContent = part[1];
+      line.appendChild(span);
+    });
+    line.querySelector('.dot').style.background = color;
+    line.addEventListener('click', go);
+    return line;
   }
 
   function lead(page, hit) {
@@ -941,6 +1029,290 @@
     return 0.5;
   }
 
+  /* --- highlights and comments --------------------------------------------- */
+
+  // under the file's own fingerprint, so the same book opened again finds its notes
+  function shelve() {
+    shelf = 'research-pdf-reader:notes:' + doc.fingerprints[0];
+    warned = false;
+    var kept = [];
+    try {
+      kept = JSON.parse(localStorage.getItem(shelf) || '[]');
+    } catch (err) { /* storage refused or unreadable: this book starts with none */ }
+    try {
+      labels = NotesCore.inkLabels(JSON.parse(localStorage.getItem(shelf + ':labels') || '{}'));
+    } catch (err) { /* nor any labels */ }
+    kept.forEach(function (raw) {
+      var note = NotesCore.place(book, raw);
+      if (note) notes.push(note); else stray.push(raw);
+    });
+    if (stray.length) say(plural(stray.length, 'kept note') + ' no longer match the text of this file. They are set aside, not deleted.');
+    drawNotes();
+  }
+
+  function keep() {
+    drawNotes();
+    if (!shelf) return;
+    try {
+      if (notes.length || stray.length) localStorage.setItem(shelf, JSON.stringify(notes.concat(stray)));
+      else localStorage.removeItem(shelf);
+      if (Object.keys(labels).length) localStorage.setItem(shelf + ':labels', JSON.stringify(labels));
+      else localStorage.removeItem(shelf + ':labels');
+    } catch (err) {
+      if (!warned) say('This browser will not keep your notes. Save them to a file from the Notes panel.');
+      warned = true;
+    }
+  }
+
+  function plural(n, word) {
+    return n + ' ' + word + (n === 1 ? '' : 's');
+  }
+
+  function noteId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function textIndex(i, node, offset) {
+    var entry = live.get(i);
+    var span = node.nodeType === 3 ? node.parentNode : node;
+    var n = entry.glyphs.indexOf(span);
+    if (n >= 0) {
+      var within = node.nodeType === 3 ? offset : (offset ? span.textContent.length : 0);
+      return IndexCore.locate(book[i], n, within);
+    }
+    // a separator or the layer itself: the point sits before the next glyph along
+    var next = node === entry.layer ? entry.layer.childNodes[offset] : span.nextSibling;
+    while (next && entry.glyphs.indexOf(next) < 0) next = next.nextSibling;
+    return next ? IndexCore.locate(book[i], entry.glyphs.indexOf(next), 0) : book[i].text.length;
+  }
+
+  function selection() {
+    var picked = window.getSelection();
+    if (!picked.rangeCount || picked.isCollapsed) return null;
+    var range = picked.getRangeAt(0);
+    var from = null;
+    var to = null;
+    Array.from(live.keys()).sort(function (a, b) { return a - b; }).forEach(function (i) {
+      var layer = live.get(i).layer;
+      if (!layer || !range.intersectsNode(layer)) return;
+      var start = layer.contains(range.startContainer) ? textIndex(i, range.startContainer, range.startOffset) : 0;
+      var end = layer.contains(range.endContainer) ? textIndex(i, range.endContainer, range.endOffset) : book[i].text.length;
+      if (!from) from = { page: i, at: start };
+      to = { page: i, at: end };
+    });
+    return from ? NotesCore.anchor(book, from, to) : null;
+  }
+
+  // in the scrolling pages rather than over them, so it travels with the words it belongs to
+  function float(panel, x, y) {
+    var host = el('pages');
+    panel.hidden = false;
+    var origin = host.getBoundingClientRect();
+    var left = x - origin.left + host.scrollLeft - panel.offsetWidth / 2;
+    var most = host.scrollLeft + host.clientWidth - panel.offsetWidth - 8;
+    var below = y + 12 + panel.offsetHeight < origin.bottom;
+    var top = below ? y + 12 : y - 12 - panel.offsetHeight;
+    panel.style.left = Math.max(host.scrollLeft + 8, Math.min(most, left)) + 'px';
+    panel.style.top = (top - origin.top + host.scrollTop) + 'px';
+  }
+
+  function noteAt(shell, x, y) {
+    var found = null;
+    shell.querySelectorAll('.marks i.note').forEach(function (mark) {
+      var box = mark.getBoundingClientRect();
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) found = mark.dataset.note;
+    });
+    return found && notes.find(function (note) { return note.id === found; });
+  }
+
+  function repaint(note) {
+    for (var i = note.page; i <= note.endPage; i++) paint(i);
+  }
+
+  function highlight(key) {
+    if (!pending) return null;
+    var note = Object.assign({ id: noteId(), ink: key, label: labels[key] || '', comment: '' }, pending);
+    note.quote = NotesCore.quote(book, note);
+    notes.push(note);
+    ink = key;
+    pending = null;
+    window.getSelection().removeAllRanges();
+    selBar.hidden = true;
+    repaint(note);
+    keep();
+    return note;
+  }
+
+  function openNote(note, x, y) {
+    opened = note;
+    showInk(noteInks, note.ink);
+    noteLabel.value = note.label;
+    noteText.value = note.comment;
+    selBar.hidden = true;
+    float(noteBox, x, y);
+    noteText.focus({ preventScroll: true });
+  }
+
+  function closeNote() {
+    opened = null;
+    noteBox.hidden = true;
+  }
+
+  function deleteNote() {
+    var gone = opened;
+    notes = notes.filter(function (note) { return note !== gone; });
+    closeNote();
+    repaint(gone);
+    keep();
+    say('Highlight deleted.', function () {
+      notes.push(gone);
+      repaint(gone);
+      keep();
+    });
+  }
+
+  function goToNote(note) {
+    reveal(note.page, note.start);
+    unlight();
+    lit = note.id;
+    document.querySelectorAll('.marks i[data-note="' + note.id + '"]').forEach(function (mark) {
+      mark.classList.add('now');
+    });
+  }
+
+  function showNotes(on) {
+    el('notes').hidden = !on;
+    el('notesOpen').classList.toggle('on', on);
+    if (!on) return;
+    el('found').hidden = true;
+    scope = null;
+    el('listAll').classList.remove('on');
+    drawNotes();
+  }
+
+  function drawNotes() {
+    if (el('notes').hidden) return;
+    var host = el('notesList');
+    host.textContent = '';
+    var showing = notes.filter(function (note) {
+      return (!notesInk || note.ink === notesInk) && (!notesLabel || note.label === notesLabel);
+    }).sort(NotesCore.order);
+    var all = plural(notes.length, 'note');
+    el('notesCount').textContent = showing.length === notes.length ? all : showing.length + ' of ' + all;
+    el('exportNotes').disabled = el('saveNotes').disabled = !notes.length;
+
+    if (!notes.length) {
+      var empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = 'Nothing marked yet. Select words on a page, then pick a colour ' +
+        'to highlight them, or Comment to write a note beside them.';
+      host.appendChild(empty);
+    }
+
+    showing.forEach(function (note) {
+      var line = listLine(NotesCore.ink(note.ink).color, NotesCore.pages(note), function () { goToNote(note); });
+      var label = NotesCore.label(note.label);
+      if (label) {
+        var tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = label.name;
+        line.querySelector('.where').appendChild(tag);
+      }
+      line.querySelector('.said').textContent = note.quote;
+      if (note.comment.trim()) {
+        var remark = document.createElement('span');
+        remark.className = 'remark';
+        remark.textContent = note.comment.trim();
+        line.appendChild(remark);
+      }
+      host.appendChild(line);
+    });
+  }
+
+  function inkButtons(host, title, pick) {
+    NotesCore.INKS.forEach(function (one) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.ink = one.key;
+      button.style.background = one.color;
+      button.title = title + ' ' + one.name.toLowerCase();
+      button.addEventListener('click', function () { pick(one.key); });
+      host.appendChild(button);
+    });
+  }
+
+  function nameInks() {
+    selBar.querySelectorAll('.inks button').forEach(function (button) {
+      var label = NotesCore.label(labels[button.dataset.ink]);
+      button.title = 'Highlight in ' + NotesCore.ink(button.dataset.ink).name.toLowerCase() +
+        (label ? ' · ' + label.name : '');
+    });
+  }
+
+  function showInk(host, key) {
+    host.querySelectorAll('button').forEach(function (button) {
+      button.classList.toggle('on', button.dataset.ink === key);
+    });
+  }
+
+  function labelOptions(select, none) {
+    [{ key: '', name: none }].concat(NotesCore.LABELS).forEach(function (one) {
+      var option = document.createElement('option');
+      option.value = one.key;
+      option.textContent = one.name;
+      select.appendChild(option);
+    });
+  }
+
+  function bookTitle() {
+    return el('fileName').textContent.replace(/\.pdf$/i, '');
+  }
+
+  function saveNotes() {
+    var kept = { version: 1, book: el('fileName').textContent, labels: labels, notes: notes.concat(stray) };
+    download(JSON.stringify(kept, null, 2), bookTitle() + '.notes.json', 'application/json');
+  }
+
+  // added to what is here, never in place of it, so loading a colleague's file loses nothing of yours
+  function loadNotes(file) {
+    file.text().then(function (text) {
+      var read = JSON.parse(text);
+      if (!read || !Array.isArray(read.notes)) throw new Error('it is not a file of notes');
+      labels = Object.assign(NotesCore.inkLabels(read.labels), labels);
+      var have = new Set(notes.map(function (note) { return note.id; }));
+      var added = 0;
+      var missed = 0;
+      read.notes.forEach(function (raw) {
+        var note = NotesCore.place(book, raw);
+        if (!note) { missed++; return; }
+        if (have.has(note.id)) return;
+        if (!note.id) note.id = noteId();
+        have.add(note.id);
+        notes.push(note);
+        added++;
+      });
+      paintAll();
+      keep();
+      say(plural(added, 'note') + ' added' + (missed ? ', ' + missed + ' did not match this book' : '') + '.');
+    }).catch(function (err) {
+      say('That file of notes could not be read: ' + err.message + '.');
+    });
+  }
+
+  function say(text, undo) {
+    var toast = el('toast');
+    toast.querySelector('span').textContent = text;
+    var button = toast.querySelector('button');
+    button.hidden = !undo;
+    button.onclick = function () {
+      toast.hidden = true;
+      undo();
+    };
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.hidden = true; }, 8000);
+  }
+
   /* --- profiles ----------------------------------------------------------- */
 
   function saveProfile() {
@@ -950,10 +1322,14 @@
         return { color: row.color, mode: row.mode, terms: row.terms, on: row.on };
       }),
     };
-    var url = URL.createObjectURL(new Blob([JSON.stringify(kept, null, 2)], { type: 'application/json' }));
+    download(JSON.stringify(kept, null, 2), 'names.json', 'application/json');
+  }
+
+  function download(text, name, type) {
+    var url = URL.createObjectURL(new Blob([text], { type: type }));
     var link = document.createElement('a');
     link.href = url;
-    link.download = 'names.json';
+    link.download = name;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -1034,7 +1410,9 @@
   el('prevHit').addEventListener('click', function () { jump(-1); });
   el('nextHit').addEventListener('click', function () { jump(1); });
   document.addEventListener('keydown', function (e) {
-    if (!e.ctrlKey || !e.shiftKey) return;
+    if (e.key === 'Escape') { closeNote(); selBar.hidden = true; }
+    // in a comment the same keys select a word, which is what the writer wants
+    if (!e.ctrlKey || !e.shiftKey || e.target === noteText) return;
     if (e.key === 'ArrowRight') { e.preventDefault(); jump(1); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); jump(-1); }
   });
@@ -1087,6 +1465,90 @@
   el('density').addEventListener('click', function (e) {
     var box = this.getBoundingClientRect();
     goTo(Math.floor((e.clientY - box.top) / box.height * book.length));
+  });
+
+  el('pages').addEventListener('mousedown', function (e) {
+    pressed = e.button === 0 && !selBar.contains(e.target) && !noteBox.contains(e.target);
+  });
+  document.addEventListener('mouseup', function (e) {
+    if (!pressed) return;
+    pressed = false;
+    var shell = e.target instanceof Element && e.target.closest('.glyphs') ? e.target.closest('.page') : null;
+    // the selection has only settled once the mouseup has run its course
+    setTimeout(function () {
+      pending = selection();
+      if (pending) { closeNote(); nameInks(); float(selBar, e.clientX, e.clientY); return; }
+      selBar.hidden = true;
+      var note = shell && noteAt(shell, e.clientX, e.clientY);
+      if (note) openNote(note, e.clientX, e.clientY);
+    }, 0);
+  });
+  el('pages').addEventListener('mousemove', function (e) {
+    var shell = !e.buttons && e.target.closest('.glyphs') ? e.target.closest('.page') : null;
+    this.classList.toggle('over-note', !!shell && !!noteAt(shell, e.clientX, e.clientY));
+  });
+  document.addEventListener('mousedown', function (e) {
+    if (!noteBox.hidden && !noteBox.contains(e.target)) closeNote();
+    if (!selBar.hidden && !selBar.contains(e.target)) selBar.hidden = true;
+  });
+
+  // a press on the bar would otherwise take the selection away before the click lands
+  selBar.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  inkButtons(el('selInks'), 'Highlight in', highlight);
+  el('selComment').addEventListener('click', function () {
+    var spot = selBar.getBoundingClientRect();
+    var note = highlight(ink);
+    if (note) openNote(note, spot.left + spot.width / 2, spot.top);
+  });
+
+  inkButtons(noteInks, 'Make it', function (key) {
+    // a label that only came with the old colour gives way to the new colour's
+    if (opened.label === (labels[opened.ink] || '')) opened.label = labels[key] || '';
+    opened.ink = ink = key;
+    noteLabel.value = opened.label;
+    showInk(noteInks, key);
+    repaint(opened);
+    keep();
+  });
+  labelOptions(noteLabel, 'No label');
+  noteLabel.addEventListener('change', function () {
+    opened.label = labels[opened.ink] = this.value;
+    keep();
+  });
+  noteText.addEventListener('input', function () {
+    opened.comment = this.value;
+    repaint(opened);
+    keep();
+  });
+  el('noteDone').addEventListener('click', closeNote);
+  el('noteDelete').addEventListener('click', deleteNote);
+
+  el('notesOpen').addEventListener('click', function () {
+    showNotes(el('notes').hidden);
+    refit();
+  });
+  el('notesClose').addEventListener('click', function () {
+    showNotes(false);
+    refit();
+  });
+  inkButtons(el('notesInks'), 'Show only', function (key) {
+    notesInk = notesInk === key ? null : key;
+    showInk(el('notesInks'), notesInk);
+    drawNotes();
+  });
+  labelOptions(el('notesLabel'), 'Any label');
+  el('notesLabel').addEventListener('change', function () {
+    notesLabel = this.value;
+    drawNotes();
+  });
+  el('exportNotes').addEventListener('click', function () {
+    download(NotesCore.markdown(bookTitle(), notes), bookTitle() + '.notes.md', 'text/markdown');
+  });
+  el('saveNotes').addEventListener('click', saveNotes);
+  el('loadNotes').addEventListener('click', function () { el('notesFile').click(); });
+  el('notesFile').addEventListener('change', function () {
+    if (this.files[0]) loadNotes(this.files[0]);
+    this.value = '';
   });
   window.addEventListener('resize', debounce(refit, 250));
 })();
