@@ -1,7 +1,8 @@
 # Research PDF Reader
 
 Search a book for as many names as you like at once, each in its own colour, and
-every spelling of each. In your browser, with nothing uploaded and no page limit.
+every spelling of each, then highlight it and comment on it as you read. In your
+browser, with nothing uploaded and no page limit.
 
 Reading a long book for a handful of names is the same work over and over. The find
 box takes one word at a time, tells you nothing about where in the book that word is
@@ -22,6 +23,9 @@ reads the book once and then answers all of those questions at the same time.
   its term's colour. Where two colours meet, both names are on that page.
 - **Every mention in one list**, in reading order, with its page number and half a
   line of context either side.
+- **Highlights and comments of your own**, in five colours, on anything from a word to
+  a paragraph that runs onto the next page. They are kept in your browser and export to
+  Markdown as quotations with their pages.
 - **Nothing is uploaded.** No server, no account, no upload, no limit on how big the
   book is.
 
@@ -144,6 +148,44 @@ handled properly, so a folded map or a landscape plate sits in the spread at its
 scale instead of pushing every other page off the spine. The text is real text as well
 — select it and copy it and you get words, not a picture.
 
+## Highlights and comments
+
+Reading a source is half the work; the other half is marking it. Select any words on a
+page, one word or a whole paragraph, even one that runs over onto the next page. A
+small bar appears beside the selection: pick one of five colours to highlight it, or
+**Comment** to write a note on it.
+
+<p align="center">
+  <img src="docs/comment.png" width="480" alt="A paragraph with a blue and a yellow highlight; the yellow one is open, showing the five colours, the label To verify and the comment Verify, sounds biased">
+</p>
+
+Click a highlight later to change its colour, give it a label (*Important*, *To verify*,
+*Questionable*, *To cite*), write or edit its comment, or delete it. A label stays with
+its colour, in that book only: make one orange highlight *Important* and every orange
+highlight after it starts out *Important* too, so each colour can mean something of its
+own in each book. A highlight that carries a comment has a small dot at its end. Your
+highlights and the search hits never look alike: a hit is ringed, a highlight is a flat
+band of colour.
+
+**Notes** in the top bar lists every highlight and comment in reading order, filtered by
+colour or label if you like. Click one and the page opens at it.
+
+![A spread with two highlights on page 40, and the Notes panel on the right listing five notes across the book with their pages, labels and comments](docs/notes.jpg)
+
+**Export as Markdown** writes them out one colour to a section, each note a quotation in
+the printed text, with its page, its label and your comment under it, ready to paste
+into a paper, a Word file or a notebook.
+
+Notes are kept in this browser, filed under the PDF's own fingerprint, so opening the
+same file again brings them back. They are never written into the PDF. That also means
+clearing the browser's data clears them, and they do not follow you to another
+computer on their own. **Save notes** writes them to a small `.json` file for exactly
+that: a backup, another machine, a colleague. **Load notes** adds such a file to the
+notes already there and never replaces them. A note is checked against the book before
+it is drawn, so a file made on a slightly different copy finds its words again where
+it can, and one meant for another book is refused rather than painted over the wrong
+words.
+
 ## Sets
 
 **Save set** writes your rows to a small `.json` file: the terms, their colours, their
@@ -161,17 +203,19 @@ a real help when the recognition was decent and merely drifting. If the recognit
 poor, the words on the page are not the words in the file, and no search can reach
 them. Better scans and a better OCR pass are the only cure.
 
-**It will not write to your PDF.** The highlighting is on screen only. Your file is
-opened, read and never touched.
+**It will not write to your PDF.** Search hits are on screen only, and your highlights
+and comments are kept beside the file, never in it. Your file is opened, read and never
+touched.
 
-**It will not remember anything.** Close the tab and the book, the terms and the
-colours are gone. That is the privacy property seen from the other side: save a set if
-you want to come back to it.
+**It will not remember the book.** Close the tab and the book, the terms and the colours
+are gone: save a set if you want to come back to them. Your own highlights and comments
+are the one thing kept, and only in this browser on this computer.
 
 ## Is my book uploaded anywhere?
 
-No, and there is nowhere for it to go. The page has no server behind it, no account, no
-analytics and no storage. It makes no network request at all once it has loaded. Turn
+No, and there is nowhere for it to go. The page has no server behind it, no account and
+no analytics, and the only thing it stores is your notes, in your own browser. It makes
+no network request at all once it has loaded. Turn
 off your network before dropping the file and everything works exactly the same, which
 is the test worth doing if you would rather check than be told.
 
@@ -191,14 +235,16 @@ text.
 pnpm install
 pnpm start    # http://localhost:8081
 pnpm vendor   # refresh vendor/ from node_modules
-pnpm test     # the indexing and the matching, in Node
+pnpm test     # the indexing, the matching and the notes, in Node
 ```
 
 The searching is deliberately kept away from the screen. `index-core.js` turns the
 fragments pdf.js hands over into one string per page, and maps any position in that
 string back to a box on the page. `match-core.js` does the folding, the counting and
-the suggesting of spellings. Neither touches the DOM, which is why both are tested in
-Node with no browser. `app.js` is everything else: opening the file, drawing the pages
+the suggesting of spellings. `notes-core.js` holds what a highlight is: a stretch of that
+same string, so it is drawn by the code that draws a hit, plus the check a note read
+back from a file must pass and the Markdown it is exported as. None of the three touches
+the DOM, which is why all of them are tested in Node with no browser. `app.js` is everything else: opening the file, drawing the pages
 that are on screen, and painting the boxes.
 
 The tests are worth reading before the code. `match-core.test.js` is built around the
